@@ -1,7 +1,17 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+
+type WholesaleOrder = {
+  proveedor: string;
+  fecha: string;
+  total: string;
+  estado: string;
+  notas: string;
+  [key: string]: any;
+};
 
 export default function EditarPedidoMayorista() {
   const router = useRouter();
@@ -15,21 +25,37 @@ export default function EditarPedidoMayorista() {
 
   useEffect(() => {
     const fetchPedido = async () => {
+      if (!id) return;
+      
       setCargando(true);
       setError(null);
-      const { data, error } = await supabase.from("wholesale_orders").select("*").eq("id", id).single();
+      // Convertir el id a string para asegurar compatibilidad de tipos
+      const idString = Array.isArray(id) ? id[0] : String(id);
+      
+      const { data, error } = await supabase.from("wholesale_orders").select("*").eq("id", idString).single();
       if (error) { setError("Error al cargar pedido"); setCargando(false); return; }
-      setForm({
-        proveedor: data.proveedor || "",
-        fecha: data.fecha ? data.fecha.slice(0, 10) : "",
-        total: data.total || "",
-        estado: data.estado || "pendiente",
-        notas: data.notas || ""
-      });
-      const { data: itemsData } = await supabase.from("wholesale_order_items").select("*").eq("wholesale_order_id", id);
-      setItems(itemsData?.map((item: any) => ({ producto: item.producto, cantidad: item.cantidad, precio_unitario: item.precio_unitario || "" })) || []);
+      
+      if (data) {
+        const orderData = data as WholesaleOrder;
+        setForm({
+          proveedor: orderData.proveedor || "",
+          fecha: orderData.fecha ? orderData.fecha.slice(0, 10) : "",
+          total: orderData.total || "",
+          estado: orderData.estado || "pendiente",
+          notas: orderData.notas || ""
+        });
+      }
+      
+      const { data: itemsData } = await supabase.from("wholesale_order_items").select("*").eq("wholesale_order_id", idString);
+      setItems(itemsData?.map((item: any) => ({ 
+        producto: item.producto, 
+        cantidad: item.cantidad, 
+        precio_unitario: item.precio_unitario || "" 
+      })) || []);
+      
       setCargando(false);
     };
+    
     if (id) fetchPedido();
   }, [id]);
 
@@ -47,6 +73,12 @@ export default function EditarPedidoMayorista() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!id) return;
+    
+    // Convertir id a string
+    const idString = Array.isArray(id) ? id[0] : String(id);
+    
     setGuardando(true);
     setError(null);
     try {
@@ -57,18 +89,21 @@ export default function EditarPedidoMayorista() {
         total: form.total || null,
         estado: form.estado,
         notas: form.notas
-      }).eq("id", id);
+      }).eq("id", idString);
+      
       // Eliminar ítems existentes y volver a insertar (simple y seguro)
-      await supabase.from("wholesale_order_items").delete().eq("wholesale_order_id", id);
+      await supabase.from("wholesale_order_items").delete().eq("wholesale_order_id", idString);
+      
       for (const item of items) {
         if (!item.producto) continue;
         await supabase.from("wholesale_order_items").insert({
-          wholesale_order_id: id,
+          wholesale_order_id: idString,
           producto: item.producto,
           cantidad: item.cantidad,
           precio_unitario: item.precio_unitario || null
         });
       }
+      
       router.push("/admin/mayoristas");
     } catch (err: any) {
       setError("Error al guardar cambios");
